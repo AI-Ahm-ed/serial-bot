@@ -1,21 +1,3 @@
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import threading
-import os
-
-# خادم وهمي لإبقاء الخدمة مستيقظة على Render
-class SimpleHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is running!")
-
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
-    server.serve_forever()
-
-# تشغيل الخادم الوهمي في الخلفية
-threading.Thread(target=run_web, daemon=True).start()
 import re
 import os
 import pandas as pd
@@ -30,7 +12,6 @@ EXCEL_FILE = "messages_data.xlsx"
 def save_to_excel(serial, pin, date_val):
     new_row = {"Serial Number": serial, "PIN": pin, "Date": date_val}
     
-    # إذا كان الملف موجوداً مسبقاً، نضيف البيانات إليه، وإلا ننشئ ملفاً جديداً
     if os.path.exists(EXCEL_FILE):
         df = pd.read_excel(EXCEL_FILE)
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
@@ -39,11 +20,24 @@ def save_to_excel(serial, pin, date_val):
         
     df.to_excel(EXCEL_FILE, index=False)
 
-# دالة استقبال الرسائل وتفكيكها
+# دالة استقبال الرسائل
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+    text = update.message.text.strip()
     
-    # التعبير النمطي لالتقاط الحقول الثلاثة بغض النظر عن المسافات أو حالة الأحرف
+    # إذا أرسل المستخدم كلمة file، نقوم بإرسال ملف الإكسل فوراً
+    if text.lower() == "file":
+        if os.path.exists(EXCEL_FILE):
+            df = pd.read_excel(EXCEL_FILE)
+            count = len(df)
+            await update.message.reply_document(
+                document=open(EXCEL_FILE, 'rb'),
+                caption=f"📊 إليك أحدث نسخة من ملف البيانات.\n📈 إجمالي المدخلات المحفوظة: {count}"
+            )
+        else:
+            await update.message.reply_text("⚠️ لا توجد أي بيانات محفوظة حتى الآن.")
+        return
+
+    # التعبير النمطي لالتقاط الحقول الثلاثة
     pattern = r"serial\s*numb:\s*(.*?)\nPIN:\s*(.*?)\nDATE:\s*(.*)"
     match = re.search(pattern, text, re.IGNORECASE)
     
@@ -61,7 +55,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text(
-            "⚠️ لم يتم التعرف على نمط الرسالة.\nتأكد أن الرسالة تحتوي على:\nserial numb:\nPIN:\nDATE:"
+            "⚠️ لم يتم التعرف على نمط الرسالة.\nتأكد أن الرسالة تحتوي على:\nserial numb:\nPIN:\nDATE:\n\n*(أو اكتب كلمة file لتحميل الملف)*"
         )
 
 if __name__ == "__main__":
