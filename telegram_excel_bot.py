@@ -24,17 +24,26 @@ def save_to_excel(serial, pin, date_val):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
-    # إذا أرسل المستخدم كلمة file، نقوم بإرسال ملف الإكسل فوراً
+    # إذا أرسل المستخدم كلمة clear، نقوم بحذف ملف الإكسل القديم لتصفيره
+    if text.lower() == "clear":
+        if os.path.exists(EXCEL_FILE):
+            os.remove(EXCEL_FILE)
+            await update.message.reply_text("🗑️ تم تصفير وحذف جميع البيانات القديمة بنجاح! البوت جاهز الآن لاستقبال دفعة جديدة.")
+        else:
+            await update.message.reply_text("⚠️ لا يوجد ملف بيانات قديم لحذفه.")
+        return
+
+    # إذا أرسل المستخدم كلمة file، نقوم بإرسال ملف الإكسل
     if text.lower() == "file":
         if os.path.exists(EXCEL_FILE):
             df = pd.read_excel(EXCEL_FILE)
             count = len(df)
             await update.message.reply_document(
                 document=open(EXCEL_FILE, 'rb'),
-                caption=f"📊 إليك أحدث نسخة من ملف البيانات.\n📈 إجمالي المدخلات المحفوظة: {count}"
+                caption=f"📊 إليك أحدث نسخة من ملف البيانات.\n📈 إجمالي المدخلات الحالية: {count}"
             )
         else:
-            await update.message.reply_text("⚠️ لا توجد أي بيانات محفوظة حتى الآن.")
+            await update.message.reply_text("⚠️ لا توجد أي بيانات محفوظة حالياً (الملف فارغ أو تم تصفيره).")
         return
 
     # التعبير النمطي لالتقاط الحقول الثلاثة
@@ -55,7 +64,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text(
-            "⚠️ لم يتم التعرف على نمط الرسالة.\nتأكد أن الرسالة تحتوي على:\nserial numb:\nPIN:\nDATE:\n\n*(أو اكتب كلمة file لتحميل الملف)*"
+            "⚠️ لم يتم التعرف على نمط الرسالة.\nتأكد أن الرسالة تحتوي على:\nserial numb:\nPIN:\nDATE:\n\n*(اكتب file لتحميل الملف، أو clear لتصفير البيانات القديمة)*"
         )
 
 if __name__ == "__main__":
