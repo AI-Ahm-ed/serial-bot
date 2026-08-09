@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 from docx import Document
@@ -11,12 +12,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# قراءة الـ Token من متغيرات البيئة أو وضعه مباشرة هنا
-TOKEN = os.getenv("TELEGRAM_TOKEN", "8876238881:AAEVbcBHKdpsFRIHxj_P5me6NLEc0JXA2lU")
+# التوكن الخاص بك
+TOKEN = "8876238881:AAEVbcBHKdpsFRIHxj_P5me6NLEc0JXA2lU"
 
 def generate_word_document(category, serial, pin, exp):
     """
-    تعبئة قالب الوورد بالبيانات المطلوبة واستبدال الحقول بناءً على النموذج الجديد
+    تعبئة قالب الوورد بالبيانات المطلوبة واستبدال الحقول بناءً على النموذج
     """
     doc_path = "template.docx"  # تأكد من رفع ملف القالب بنفس هذا الاسم
     
@@ -54,29 +55,45 @@ def generate_word_document(category, serial, pin, exp):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    معالجة الرسائل الواردة، توقع رسالة بالشكل:
-    Category | Serial | Pin | Exp
+    معالجة الرسائل الواردة بالصيغة متعددة الأسطر:
+    15K 
+    Ser: 26041900225094 
+    PIN: 2421896018520315 
+    Exp: 2028-08-31
     """
     text = update.message.text.strip()
+    lines = text.split('\n')
     
-    # إذا أرسل المستخدم كلمة file أو ما شابه
-    if text.lower() == "file":
-        await update.message.reply_text("الرجاء إرسال بيانات الكارت بهذا الترتيب:\nCategory | Serial | Pin | Exp")
-        return
-
-    # تقسيم النص بناءً على الفاصل "|"
-    parts = [p.strip() for p in text.split('|')]
-    
-    if len(parts) != 4:
+    if len(lines) < 4:
         await update.message.reply_text(
             "⚠️ الصيغة غير صحيحة!\n"
-            "الرجاء إرسال البيانات بالترتيب التالي فاصلاً بينها بـ |\n\n"
-            "مثال:\n"
-            "15K | 26041900225094 | 2421896018520315 | 2028-08-31"
+            "الرجاء إرسال الرسالة بنفس التنسيق:\n\n"
+            "15K\n"
+            "Ser: 26041900225094\n"
+            "PIN: 2421896018520315\n"
+            "Exp: 2028-08-31"
         )
         return
 
-    category, serial, pin, exp = parts
+    # السطر الأول يمثل الـ Category
+    category = lines[0].strip()
+    
+    serial = ""
+    pin = ""
+    exp = ""
+
+    # استخراج البيانات باستخدام البحث عن المفاتيح بغض النظر عن ترتيب الأسطر الباقية
+    for line in lines[1:]:
+        if "Ser:" in line:
+            serial = line.replace("Ser:", "").strip()
+        elif "PIN:" in line:
+            pin = line.replace("PIN:", "").strip()
+        elif "Exp:" in line:
+            exp = line.replace("Exp:", "").strip()
+
+    if not serial or not pin or not exp:
+        await update.message.reply_text("⚠️ لم يتم العثور على جميع البيانات (Ser, PIN, Exp). تأكد من كتابة الكلمات بشكل صحيح.")
+        return
 
     # توليد ملف الوورد
     file_path = generate_word_document(category, serial, pin, exp)
@@ -85,21 +102,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(file_path, 'rb') as doc_file:
             await update.message.reply_document(
                 document=doc_file,
-                caption=f"✅ تم توليد كارت الـ Exp بنجاح:\nSer: {serial}"
+                caption=f"✅ تم توليد الكارت بنجاح:\nSer: {serial}"
             )
-        # حذف الملف من السيرفر بعد الإرسال للحفاظ على المساحة
+        # حذف الملف من السيرفر بعد الإرسال
         os.remove(file_path)
     else:
-        await update.message.reply_text("❌ حدث خطأ أثناء توليد المستند، تأكد من وجود ملف `template.docx`.")
+        await update.message.reply_text("❌ حدث خطأ أثناء توليد المستند، تأكد من وجود ملف `template.docx` في المشروع.")
 
 def main():
     # بناء تطبيق البوت
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # استقبال أي رسالة نصية ومعالجتها
+    # استقبال الرسائل النصية
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
-    # تشغيل البوت
     print("Bot is running...")
     application.run_polling()
 
