@@ -11,34 +11,56 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# التوكن الخاص بك
 TOKEN = "8876238881:AAEVbcBHKdpsFRIHxj_P5me6NLEc0JXA2lU"
-
-# قائمة مؤقتة لتخزين الكارتات المرسلة
 cards_database = []
 
-def fill_data(doc, category, serial, pin, exp):
-    """تعبئة الحقول في المستند مع الحفاظ على التنسيق"""
+def fill_and_append_card(master_doc, template_path, category, serial, pin, exp, is_first):
+    """
+    تقوم بفتح نسخة من القالب، استبدال البيانات فيها، ثم إضافتها للمستند الرئيسي 
+    مع الحفاظ على التصميم واللوجو والجداول تماماً.
+    """
+    if not is_first:
+        master_doc.add_page_break()
+
+    # نفتح نسخة جديدة من القالب لكل كارت لضمان بقاء التصميم واللوجو والصور
+    temp_doc = Document(template_path)
+    
     replacements = {
         "[CATEGORY]": category,
         "[SERIAL]": serial,
         "[PIN]": pin,
         "[EXP]": exp
     }
-    
-    for p in doc.paragraphs:
+
+    # استبدال النصوص في الفقرات
+    for p in temp_doc.paragraphs:
         for key, value in replacements.items():
             if key in p.text:
                 for run in p.runs:
                     if key in run.text:
                         run.text = run.text.replace(key, value)
-    
-    for table in doc.tables:
+
+    # استبدال النصوص في الجداول
+    for table in temp_doc.tables:
         for row in table.rows:
             for cell in row.cells:
                 for key, value in replacements.items():
                     if key in cell.text:
-                        cell.text = cell.text.replace(key, value)
+                        for paragraph in cell.paragraphs:
+                            for run in paragraph.runs:
+                                if key in run.text:
+                                    run.text = run.text.replace(key, value)
+
+    # إذا لم يكن الكارت الأول، ننقل محتويات النسخة إلى المستند الرئيسي
+    if is_first:
+        # ننسخ محتويات أول قالب للمستند الرئيسي مباشرة
+        master_doc._body._element.clear()
+        for element in temp_doc._body._element:
+            master_doc._body._element.append(element)
+    else:
+        # نضيف عناصر الكارت الجديد للمستند الرئيسي
+        for element in temp_doc._body._element:
+            master_doc._body._element.append(element)
 
 def create_combined_word_document(cards_list):
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -49,22 +71,22 @@ def create_combined_word_document(cards_list):
         return None
 
     try:
+        # نبدأ بمستند فارغ لنبني فيه الكارتات بالتصميم الأصلي
         master_doc = Document(template_path)
     except Exception as e:
         logger.error(f"فشل في فتح ملف القالب: {e}")
         return None
 
-    # تعبئة أول كارت
-    fill_data(master_doc, cards_list[0]['category'], cards_list[0]['serial'], cards_list[0]['pin'], cards_list[0]['exp'])
-    
-    # إضافة الكارتات المتبقية بصفحات جديدة نظيفة
-    for i in range(1, len(cards_list)):
-        master_doc.add_page_break()
-        temp_doc = Document(template_path)
-        fill_data(temp_doc, cards_list[i]['category'], cards_list[i]['serial'], cards_list[i]['pin'], cards_list[i]['exp'])
-        
-        for p in temp_doc.paragraphs:
-            master_doc.add_paragraph(p.text, style=p.style)
+    for index, card in enumerate(cards_list):
+        fill_and_append_card(
+            master_doc=master_doc,
+            template_path=template_path,
+            category=card['category'],
+            serial=card['serial'],
+            pin=card['pin'],
+            exp=card['exp'],
+            is_first=(index == 0)
+        )
 
     output_filename = "all_cards_combined.docx"
     output_path = os.path.join(base_dir, output_filename)
@@ -94,7 +116,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with open(file_path, 'rb') as doc_file:
                 await update.message.reply_document(
                     document=doc_file,
-                    caption=f"✅ تم إرسال الملف المجمع ويحتوي على ({len(cards_database)}) كارت.\n(ملاحظة: الكارتات لا تزال محفوظة، يمكنك طلب الملف مرة أخرى أو كتابة clear للتفريغ)."
+                    caption=f"✅ تم إرسال الملف المجمع ويحتوي على ({len(cards_database)}) كارت بنفس التصميم واللوجو.\n(ملاحظة: الكارتات لا تزال محفوظة، يمكنك طلب الملف مرة أخرى أو كتابة clear للتفريغ)."
                 )
             os.remove(file_path)
         else:
@@ -148,7 +170,6 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
     print("Bot is running...")
-    # استخدام نظام التشغيل المستمر المناسب للسيرفرات
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
