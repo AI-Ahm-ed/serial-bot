@@ -1,66 +1,107 @@
-import re
 import os
+import logging
 from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 from docx import Document
 
-TOKEN = "8876238881:AAEVbcBHKdpsFRIHxj_P5me6NLEc0JXA2lU"
-TEMPLATE = "template.docx"
-FINAL_FILE = "all_cards.docx"
+# إعداد السجلات للتتبع
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-def fill_template(cat, ser, pin, date):
-    # إذا لم يوجد الملف النهائي، ننشئه لأول مرة من القالب
-    if not os.path.exists(FINAL_FILE):
-        doc = Document(TEMPLATE) if os.path.exists(TEMPLATE) else Document()
-    else:
-        # إذا كان موجوداً، نفتح الملف الحالي ونضيف صفحة جديدة ننسخ فيها القالب
-        doc = Document(FINAL_FILE)
-        doc.add_page_break()
-        if os.path.exists(TEMPLATE):
-            temp_doc = Document(TEMPLATE)
-            for element in temp_doc.element.body:
-                doc.element.body.append(element)
+# ضع الـ Token الخاص بك هنا مباشرة أو عبر متغيرات البيئة
+TOKEN = os.getenv("TELEGRAM_TOKEN", "YOUR_BOT_TOKEN_HERE")
 
-    # استبدال النصوص في آخر جزء (الكارت) تمت إضافته
-    for paragraph in doc.paragraphs:
-        if "[CATEGORY]" in paragraph.text: paragraph.text = paragraph.text.replace("[CATEGORY]", cat)
-        if "[SERIAL]" in paragraph.text: paragraph.text = paragraph.text.replace("[SERIAL]", ser)
-        if "[PIN]" in paragraph.text: paragraph.text = paragraph.text.replace("[PIN]", pin)
-        if "[DATE]" in paragraph.text: paragraph.text = paragraph.text.replace("[DATE]", date)
+def generate_word_document(category, serial, pin, exp):
+    """
+    تعبئة قالب الوورد بالبيانات المطلوبة واستبدال الحقول بناءً على النموذج الجديد
+    """
+    doc_path = "template.docx"  # تأكد من رفع ملف القالب بنفس هذا الاسم
     
-    doc.save(FINAL_FILE)
+    try:
+        doc = Document(doc_path)
+    except Exception as e:
+        logger.error(f"فشل في فتح ملف القالب: {e}")
+        return None
+
+    # استبدال الحقول داخل المستند (النصوص والجداول)
+    for paragraph in doc.paragraphs:
+        if "[CATEGORY]" in paragraph.text or "[SERIAL]" in paragraph.text or "[PIN]" in paragraph.text or "[EXP]" in paragraph.text:
+            for run in paragraph.runs:
+                run.text = (run.text
+                            .replace("[CATEGORY]", category)
+                            .replace("[SERIAL]", serial)
+                            .replace("[PIN]", pin)
+                            .replace("[EXP]", exp))
+
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if "[CATEGORY]" in cell.text or "[SERIAL]" in cell.text or "[PIN]" in cell.text or "[EXP]" in cell.text:
+                    for paragraph in cell.paragraphs:
+                        for run in paragraph.runs:
+                            run.text = (run.text
+                                        .replace("[CATEGORY]", category)
+                                        .replace("[SERIAL]", serial)
+                                        .replace("[PIN]", pin)
+                                        .replace("[EXP]", exp))
+
+    output_filename = f"card_{serial}.docx"
+    doc.save(output_filename)
+    return output_filename
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    معالجة الرسائل الواردة، توقع رسالة بالشكل:
+    Category | Serial | Pin | Exp
+    """
     text = update.message.text.strip()
-
-    # أمر التصفير (تفريغ الملف)
-    if text.lower() == "clear":
-        if os.path.exists(TEMPLATE):
-            doc = Document(TEMPLATE)
-            doc.save(FINAL_FILE)
-            await update.message.reply_text("🧹 تم تصفير الملف، أنت الآن على لوح أبيض!")
-        else:
-            await update.message.reply_text("⚠️ ملف القالب (template.docx) غير موجود!")
-        return
-
-    # أمر الحصول على الملف
+    
+    # إذا أرسل المستخدم كلمة file أو ما شابه (اختياري)
     if text.lower() == "file":
-        if os.path.exists(FINAL_FILE):
-            await update.message.reply_document(document=open(FINAL_FILE, 'rb'))
-        else:
-            await update.message.reply_text("⚠️ الملف فارغ.")
+        await update.message.reply_text("الرجاء إرسال بيانات الكارت بهذا الترتيب:\nCategory | Serial | Pin | Exp")
         return
 
-    # نمط استقبال الكارت (تأكد من إرسال البيانات بنفس الترتيب)
-    pattern = r"(.*?)\n.*?Ser:\s*(.*?)\n.*?PIN:\s*(.*?)\n.*?Date:\s*(.*)"
-    match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+    # تقسيم النص بناءً على الفاصل "|"
+    parts = [p.strip() for p in text.split('|')]
+    
+    if len(parts) != 4:
+        await update.message.reply_text(
+            "⚠️ الصيغة غير صحيحة!\n"
+            "الرجاء إرسال البيانات بالترتيب التالي فاصلاً بينها بـ |\n\n"
+            "مثال:\n"
+            "15K | 26041900225094 | 2421896018520315 | 2028-08-31"
+        )
+        return
 
-    if match:
-        fill_template(match.group(1).strip(), match.group(2).strip(), match.group(3).strip(), match.group(4).strip())
-        await update.message.reply_text(f"🖨️ تمت إضافة كارت {match.group(1).strip()} بنجاح!")
+    category, serial, pin, exp = parts
+
+    # توليد ملف الوورد
+    file_path = generate_word_document(category, serial, pin, exp)
+    
+    if file_path and os.path.exists(file_path):
+        with open(file_path, 'rb') as doc_file:
+            await update.message.reply_document(
+                document=doc_file,
+                caption=f"✅ تم توليد كارت الـ Exp بنجاح:\nSer: {serial}"
+            )
+        # حذف الملف من السيرفر بعد الإرسال للحفاظ على المساحة
+        os.remove(file_path)
     else:
-        await update.message.reply_text("❌ صيغة غير صحيحة. يرجى الإرسال كالتالي:\n15K\nSer: ...\nPIN: ...\nDate: ...")
+        await update.message.reply_text("❌ حدث خطأ أثناء توليد المستودع، تأكد من وجود ملف `template.docx`.")
 
-app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-app.run_polling()
+def main():
+    # بناء تطبيق البوت
+    application = ApplicationBuilder().token(TOKEN).build()
+
+    # استقبال أي رسالة نصية ومعالجتها
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+
+    # تشغيل البوت
+    print("Bot is running...")
+    application.run_polling()
+
+if __name__ == '__main__':
+    main()
