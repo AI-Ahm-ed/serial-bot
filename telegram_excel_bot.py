@@ -1,74 +1,66 @@
 import re
 import os
-import pandas as pd
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+from docx import Document
 
-# ضع الـ Token الذي حصلت عليه من BotFather هنا
 TOKEN = "8876238881:AAEVbcBHKdpsFRIHxj_P5me6NLEc0JXA2lU"
-EXCEL_FILE = "messages_data.xlsx"
+TEMPLATE = "template.docx"
+FINAL_FILE = "all_cards.docx"
 
-# دالة لحفظ البيانات في Excel
-def save_to_excel(serial, pin, date_val):
-    new_row = {"Serial Number": serial, "PIN": pin, "Date": date_val}
-    
-    if os.path.exists(EXCEL_FILE):
-        df = pd.read_excel(EXCEL_FILE)
-        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+def fill_template(cat, ser, pin, date):
+    # إذا لم يوجد الملف النهائي، ننشئه لأول مرة من القالب
+    if not os.path.exists(FINAL_FILE):
+        doc = Document(TEMPLATE) if os.path.exists(TEMPLATE) else Document()
     else:
-        df = pd.DataFrame([new_row])
-        
-    df.to_excel(EXCEL_FILE, index=False)
+        # إذا كان موجوداً، نفتح الملف الحالي ونضيف صفحة جديدة ننسخ فيها القالب
+        doc = Document(FINAL_FILE)
+        doc.add_page_break()
+        if os.path.exists(TEMPLATE):
+            temp_doc = Document(TEMPLATE)
+            for element in temp_doc.element.body:
+                doc.element.body.append(element)
 
-# دالة استقبال الرسائل
+    # استبدال النصوص في آخر جزء (الكارت) تمت إضافته
+    for paragraph in doc.paragraphs:
+        if "[CATEGORY]" in paragraph.text: paragraph.text = paragraph.text.replace("[CATEGORY]", cat)
+        if "[SERIAL]" in paragraph.text: paragraph.text = paragraph.text.replace("[SERIAL]", ser)
+        if "[PIN]" in paragraph.text: paragraph.text = paragraph.text.replace("[PIN]", pin)
+        if "[DATE]" in paragraph.text: paragraph.text = paragraph.text.replace("[DATE]", date)
+    
+    doc.save(FINAL_FILE)
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-    
-    # إذا أرسل المستخدم كلمة clear، نقوم بحذف ملف الإكسل القديم لتصفيره
+
+    # أمر التصفير (تفريغ الملف)
     if text.lower() == "clear":
-        if os.path.exists(EXCEL_FILE):
-            os.remove(EXCEL_FILE)
-            await update.message.reply_text("🗑️ تم تصفير وحذف جميع البيانات القديمة بنجاح! البوت جاهز الآن لاستقبال دفعة جديدة.")
+        if os.path.exists(TEMPLATE):
+            doc = Document(TEMPLATE)
+            doc.save(FINAL_FILE)
+            await update.message.reply_text("🧹 تم تصفير الملف، أنت الآن على لوح أبيض!")
         else:
-            await update.message.reply_text("⚠️ لا يوجد ملف بيانات قديم لحذفه.")
+            await update.message.reply_text("⚠️ ملف القالب (template.docx) غير موجود!")
         return
 
-    # إذا أرسل المستخدم كلمة file، نقوم بإرسال ملف الإكسل
+    # أمر الحصول على الملف
     if text.lower() == "file":
-        if os.path.exists(EXCEL_FILE):
-            df = pd.read_excel(EXCEL_FILE)
-            count = len(df)
-            await update.message.reply_document(
-                document=open(EXCEL_FILE, 'rb'),
-                caption=f"📊 إليك أحدث نسخة من ملف البيانات.\n📈 إجمالي المدخلات الحالية: {count}"
-            )
+        if os.path.exists(FINAL_FILE):
+            await update.message.reply_document(document=open(FINAL_FILE, 'rb'))
         else:
-            await update.message.reply_text("⚠️ لا توجد أي بيانات محفوظة حالياً (الملف فارغ أو تم تصفيره).")
+            await update.message.reply_text("⚠️ الملف فارغ.")
         return
 
-    # التعبير النمطي لالتقاط الحقول الثلاثة
-    pattern = r"serial\s*numb:\s*(.*?)\nPIN:\s*(.*?)\nDATE:\s*(.*)"
-    match = re.search(pattern, text, re.IGNORECASE)
-    
-    if match:
-        serial = match.group(1).strip()
-        pin = match.group(2).strip()
-        date_val = match.group(3).strip()
-        
-        # حفظ في Excel
-        save_to_excel(serial, pin, date_val)
-        
-        # إرسال تأكيد للمُرسل
-        await update.message.reply_text(
-            f"✅ تم حفظ البيانات بنجاح!\n\n🔹 Serial: {serial}\n🔹 PIN: {pin}\n🔹 Date: {date_val}"
-        )
-    else:
-        await update.message.reply_text(
-            "⚠️ لم يتم التعرف على نمط الرسالة.\nتأكد أن الرسالة تحتوي على:\nserial numb:\nPIN:\nDATE:\n\n*(اكتب file لتحميل الملف، أو clear لتصفير البيانات القديمة)*"
-        )
+    # نمط استقبال الكارت (تأكد من إرسال البيانات بنفس الترتيب)
+    pattern = r"(.*?)\n.*?Ser:\s*(.*?)\n.*?PIN:\s*(.*?)\n.*?Date:\s*(.*)"
+    match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
 
-if __name__ == "__main__":
-    print("🤖 البوت يعمل الان ويستقبل الرسائل...")
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    app.run_polling()
+    if match:
+        fill_template(match.group(1).strip(), match.group(2).strip(), match.group(3).strip(), match.group(4).strip())
+        await update.message.reply_text(f"🖨️ تمت إضافة كارت {match.group(1).strip()} بنجاح!")
+    else:
+        await update.message.reply_text("❌ صيغة غير صحيحة. يرجى الإرسال كالتالي:\n15K\nSer: ...\nPIN: ...\nDate: ...")
+
+app = ApplicationBuilder().token(TOKEN).build()
+app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+app.run_polling()
