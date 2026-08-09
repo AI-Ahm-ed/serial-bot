@@ -17,9 +17,34 @@ TOKEN = "8876238881:AAEVbcBHKdpsFRIHxj_P5me6NLEc0JXA2lU"
 # قائمة مؤقتة لتخزين الكارتات المرسلة
 cards_database = []
 
+def fill_card_data(doc, category, serial, pin, exp):
+    """
+    دالة مساعدة لتعبئة الحقول داخل المستند
+    """
+    for paragraph in doc.paragraphs:
+        if any(k in paragraph.text for k in ["[CATEGORY]", "[SERIAL]", "[PIN]", "[EXP]"]):
+            for run in paragraph.runs:
+                run.text = (run.text
+                            .replace("[CATEGORY]", category)
+                            .replace("[SERIAL]", serial)
+                            .replace("[PIN]", pin)
+                            .replace("[EXP]", exp))
+
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if any(k in cell.text for k in ["[CATEGORY]", "[SERIAL]", "[PIN]", "[EXP]"]):
+                    for paragraph in cell.paragraphs:
+                        for run in paragraph.runs:
+                            run.text = (run.text
+                                        .replace("[CATEGORY]", category)
+                                        .replace("[SERIAL]", serial)
+                                        .replace("[PIN]", pin)
+                                        .replace("[EXP]", exp))
+
 def create_combined_word_document(cards_list):
     """
-    دمج قالب الوورد المتعدد في ملف واحد، بحيث يأخذ كل كارت صفحة جديدة
+    دمج قالب الوورد في ملف واحد بحيث يأخذ كل كارت صفحة جديدة بشكل صحيح ومنظم
     """
     base_dir = os.path.dirname(os.path.abspath(__file__))
     template_path = os.path.join(base_dir, "template.docx")
@@ -29,6 +54,7 @@ def create_combined_word_document(cards_list):
         return None
 
     try:
+        # نبدأ بإنشاء المستند الرئيسي باستخدام أول كارت
         master_doc = Document(template_path)
     except Exception as e:
         logger.error(f"فشل في فتح ملف القالب: {e}")
@@ -40,54 +66,18 @@ def create_combined_word_document(cards_list):
         pin = card['pin']
         exp = card['exp']
 
-        if index > 0:
+        if index == 0:
+            # تعبئة الكارت الأول في المستند الرئيسي
+            fill_card_data(master_doc, category, serial, pin, exp)
+        else:
+            # للكارتات اللاحقة، نضيف فاصل صفحات ثم نقرأ نسخة جديدة ونعبئها ونضيفها للمستند الرئيسي
             master_doc.add_page_break()
             temp_doc = Document(template_path)
+            fill_card_data(temp_doc, category, serial, pin, exp)
             
-            for paragraph in temp_doc.paragraphs:
-                if any(k in paragraph.text for k in ["[CATEGORY]", "[SERIAL]", "[PIN]", "[EXP]"]):
-                    for run in paragraph.runs:
-                        run.text = (run.text
-                                    .replace("[CATEGORY]", category)
-                                    .replace("[SERIAL]", serial)
-                                    .replace("[PIN]", pin)
-                                    .replace("[EXP]", exp))
-
-            for table in temp_doc.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        if any(k in cell.text for k in ["[CATEGORY]", "[SERIAL]", "[PIN]", "[EXP]"]):
-                            for paragraph in cell.paragraphs:
-                                for run in paragraph.runs:
-                                    run.text = (run.text
-                                                .replace("[CATEGORY]", category)
-                                                .replace("[SERIAL]", serial)
-                                                .replace("[PIN]", pin)
-                                                .replace("[EXP]", exp))
-            
+            # نسخ العناصر من المستند المؤقت إلى المستند الرئيسي بشكل نظيف
             for element in temp_doc.element.body:
                 master_doc.element.body.append(element)
-        else:
-            for paragraph in master_doc.paragraphs:
-                if any(k in paragraph.text for k in ["[CATEGORY]", "[SERIAL]", "[PIN]", "[EXP]"]):
-                    for run in paragraph.runs:
-                        run.text = (run.text
-                                    .replace("[CATEGORY]", category)
-                                    .replace("[SERIAL]", serial)
-                                    .replace("[PIN]", pin)
-                                    .replace("[EXP]", exp))
-
-            for table in master_doc.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        if any(k in cell.text for k in ["[CATEGORY]", "[SERIAL]", "[PIN]", "[EXP]"]):
-                            for paragraph in cell.paragraphs:
-                                for run in paragraph.runs:
-                                    run.text = (run.text
-                                                .replace("[CATEGORY]", category)
-                                                .replace("[SERIAL]", serial)
-                                                .replace("[PIN]", pin)
-                                                .replace("[EXP]", exp))
 
     output_filename = "all_cards_combined.docx"
     output_path = os.path.join(base_dir, output_filename)
@@ -119,7 +109,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with open(file_path, 'rb') as doc_file:
                 await update.message.reply_document(
                     document=doc_file,
-                    caption=f"✅ تم إرسال الملف المجمع ويحتوي على ({len(cards_database)}) كارت.\n(ملاحظة: الكارتات لا تزال محفوظة، يمكنك طلب الملف مرة أخرى أو كتابة clear للتفريغ)."
+                    caption=f"✅ تم إرسال الملف المجمع ويحتوي على ({len(cards_database)}) كارت مرتبة في صفحات منفصلة.\n(ملاحظة: الكارتات لا تزال محفوظة، يمكنك طلب الملف مرة أخرى أو كتابة clear للتفريغ)."
                 )
             os.remove(file_path)
         else:
