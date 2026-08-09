@@ -14,17 +14,8 @@ logger = logging.getLogger(__name__)
 TOKEN = "8876238881:AAEVbcBHKdpsFRIHxj_P5me6NLEc0JXA2lU"
 cards_database = []
 
-def fill_and_append_card(master_doc, template_path, category, serial, pin, exp, is_first):
-    """
-    تقوم بفتح نسخة من القالب، استبدال البيانات فيها، ثم إضافتها للمستند الرئيسي 
-    مع الحفاظ على التصميم واللوجو والجداول تماماً.
-    """
-    if not is_first:
-        master_doc.add_page_break()
-
-    # نفتح نسخة جديدة من القالب لكل كارت لضمان بقاء التصميم واللوجو والصور
-    temp_doc = Document(template_path)
-    
+def fill_template_data(doc, category, serial, pin, exp):
+    """استبدال الكلمات المفتاحية في المستند (فقرات وجداول)"""
     replacements = {
         "[CATEGORY]": category,
         "[SERIAL]": serial,
@@ -32,16 +23,14 @@ def fill_and_append_card(master_doc, template_path, category, serial, pin, exp, 
         "[EXP]": exp
     }
 
-    # استبدال النصوص في الفقرات
-    for p in temp_doc.paragraphs:
+    for p in doc.paragraphs:
         for key, value in replacements.items():
             if key in p.text:
                 for run in p.runs:
                     if key in run.text:
                         run.text = run.text.replace(key, value)
 
-    # استبدال النصوص في الجداول
-    for table in temp_doc.tables:
+    for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
                 for key, value in replacements.items():
@@ -50,17 +39,6 @@ def fill_and_append_card(master_doc, template_path, category, serial, pin, exp, 
                             for run in paragraph.runs:
                                 if key in run.text:
                                     run.text = run.text.replace(key, value)
-
-    # إذا لم يكن الكارت الأول، ننقل محتويات النسخة إلى المستند الرئيسي
-    if is_first:
-        # ننسخ محتويات أول قالب للمستند الرئيسي مباشرة
-        master_doc._body._element.clear()
-        for element in temp_doc._body._element:
-            master_doc._body._element.append(element)
-    else:
-        # نضيف عناصر الكارت الجديد للمستند الرئيسي
-        for element in temp_doc._body._element:
-            master_doc._body._element.append(element)
 
 def create_combined_word_document(cards_list):
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -71,22 +49,27 @@ def create_combined_word_document(cards_list):
         return None
 
     try:
-        # نبدأ بمستند فارغ لنبني فيه الكارتات بالتصميم الأصلي
+        # نبدأ بالمستند الرئيسي ونعبئ الكارت الأول فيه
         master_doc = Document(template_path)
+        fill_template_data(master_doc, cards_list[0]['category'], cards_list[0]['serial'], cards_list[0]['pin'], cards_list[0]['exp'])
     except Exception as e:
-        logger.error(f"فشل في فتح ملف القالب: {e}")
+        logger.error(f"فشل في إنشاء أو فتح ملف القالب: {e}")
         return None
 
-    for index, card in enumerate(cards_list):
-        fill_and_append_card(
-            master_doc=master_doc,
-            template_path=template_path,
-            category=card['category'],
-            serial=card['serial'],
-            pin=card['pin'],
-            exp=card['exp'],
-            is_first=(index == 0)
-        )
+    # إضافة الكارتات المتبقية بفاصل صفحات نظيف ومنظم
+    for i in range(1, len(cards_list)):
+        card = cards_list[i]
+        
+        # إضافة فاصل صفحات حقيقي ونظيف يمنع تماماً زحف الكارت على الصفحة السابقة أو تكوين صفحات فارغة
+        master_doc.add_page_break()
+
+        # نفتح نسخة جديدة ونظيفة من القالب لكل كارت لتكون المستقلة بتصميمها ولوجوها
+        temp_doc = Document(template_path)
+        fill_template_data(temp_doc, card['category'], card['serial'], card['pin'], card['exp'])
+
+        # دمج عناصر الكارت الجديد إلى المستند الرئيسي
+        for element in temp_doc._body._element:
+            master_doc._body._element.append(element)
 
     output_filename = "all_cards_combined.docx"
     output_path = os.path.join(base_dir, output_filename)
@@ -116,7 +99,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with open(file_path, 'rb') as doc_file:
                 await update.message.reply_document(
                     document=doc_file,
-                    caption=f"✅ تم إرسال الملف المجمع ويحتوي على ({len(cards_database)}) كارت بنفس التصميم واللوجو.\n(ملاحظة: الكارتات لا تزال محفوظة، يمكنك طلب الملف مرة أخرى أو كتابة clear للتفريغ)."
+                    caption=f"✅ تم إرسال الملف المجمع ويحتوي على ({len(cards_database)}) كارت في صفحات مستقلة تماماً بدون تداخل.\n(ملاحظة: الكارتات لا تزال محفوظة، يمكنك طلب الملف مرة أخرى أو كتابة clear للتفريغ)."
                 )
             os.remove(file_path)
         else:
