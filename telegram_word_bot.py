@@ -3,6 +3,8 @@ import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 from docx import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -39,6 +41,15 @@ def fill_template_data(doc, category, serial, pin, exp):
                                 if key in run.text:
                                     run.text = run.text.replace(key, value)
 
+def add_page_break_to_last_paragraph(doc):
+    """إحقاق فاصل الصفحة داخل آخر فقرة موجودة فعلياً لمنع ظهور صفحة بيضاء مستقلة"""
+    if doc.paragraphs:
+        last_p = doc.paragraphs[-1]
+        run = last_p.add_run()
+        br = OxmlElement('w:br')
+        br.set(qn('w:type'), 'page')
+        run._r.append(br)
+
 def create_combined_word_document(cards_list):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     template_path = os.path.join(base_dir, "template.docx")
@@ -55,16 +66,16 @@ def create_combined_word_document(cards_list):
         logger.error(f"فشل في فتح ملف القالب: {e}")
         return None
 
-    # دمج الكارتات التالية بشكل متتابع ونظيف تماماً بدون فواصل عشوائية تسبب صفحات بيضاء
+    # دمج الكارتات التالية بدون إنشاء فقرات فارغة تسبب صفحات بيضاء
     for i in range(1, len(cards_list)):
         card = cards_list[i]
         
+        # إضافة فاصل الصفحات مدمجاً في نهاية المحتوى السابق مباشرة
+        add_page_break_to_last_paragraph(master_doc)
+
         # نفتح نسخة جديدة ونظيفة من القالب لكل كارت
         temp_doc = Document(template_path)
         fill_template_data(temp_doc, card['category'], card['serial'], card['pin'], card['exp'])
-
-        # نضيف فاصل صفحة نظامي وخاص بـ XML المستند لضمان عدم التداخل نهائياً
-        master_doc.add_page_break()
 
         # دمج عناصر الكارت الجديد إلى المستند الرئيسي
         for element in temp_doc._body._element:
@@ -98,7 +109,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with open(file_path, 'rb') as doc_file:
                 await update.message.reply_document(
                     document=doc_file,
-                    caption=f"✅ تم إرسال الملف المجمع ويحتوي على ({len(cards_database)}) كارت مع الحفاظ على المسافات وبدون أي صفحات فارغة.\n(ملاحظة: الكارتات لا تزال محفوظة، يمكنك طلب الملف مرة أخرى أو كتابة clear للتفريغ)."
+                    caption=f"✅ تم إرسال الملف المجمع ويحتوي على ({len(cards_database)}) كارت بدون أي صفحات بيضاء.\n(ملاحظة: الكارتات لا تزال محفوظة، يمكنك طلب الملف مرة أخرى أو كتابة clear للتفريغ)."
                 )
             os.remove(file_path)
         else:
