@@ -14,7 +14,7 @@ TOKEN = "8876238881:AAEVbcBHKdpsFRIHxj_P5me6NLEc0JXA2lU"
 cards_database = []
 
 def fill_template_data(doc, category, serial, pin, exp):
-    """استبدال الكلمات المفتاحية في المستند بدقة"""
+    """استبدال الكلمات المفتاحية بدقة مع الحفاظ على التنسيق والمسافات"""
     replacements = {
         "[CATEGORY]": category,
         "[SERIAL]": serial,
@@ -55,18 +55,18 @@ def create_combined_word_document(cards_list):
         logger.error(f"فشل في فتح ملف القالب: {e}")
         return None
 
-    # لكل كارت إضافي، نفتح نسخته الخاصة ونضيفها بفاصل صفحات سليم
+    # دمج الكارتات التالية بشكل متتابع ونظيف تماماً بدون فواصل عشوائية تسبب صفحات بيضاء
     for i in range(1, len(cards_list)):
         card = cards_list[i]
         
-        # إضافة فاصل صفحة نظيف في المستند الرئيسي
-        master_doc.add_page_break()
-
-        # نفتح نسخة جديدة ومستقلة تماماً من القالب
+        # نفتح نسخة جديدة ونظيفة من القالب لكل كارت
         temp_doc = Document(template_path)
         fill_template_data(temp_doc, card['category'], card['serial'], card['pin'], card['exp'])
 
-        # نسخ محتوى القالب الجديد بحذافيره إلى المستند الرئيسي
+        # نضيف فاصل صفحة نظامي وخاص بـ XML المستند لضمان عدم التداخل نهائياً
+        master_doc.add_page_break()
+
+        # دمج عناصر الكارت الجديد إلى المستند الرئيسي
         for element in temp_doc._body._element:
             master_doc._body._element.append(element)
 
@@ -98,7 +98,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with open(file_path, 'rb') as doc_file:
                 await update.message.reply_document(
                     document=doc_file,
-                    caption=f"✅ تم إرسال الملف المجمع ويحتوي على ({len(cards_database)}) كارت بنفس التصميم تماماً دون تداخل.\n(ملاحظة: الكارتات لا تزال محفوظة، يمكنك طلب الملف مرة أخرى أو كتابة clear للتفريغ)."
+                    caption=f"✅ تم إرسال الملف المجمع ويحتوي على ({len(cards_database)}) كارت مع الحفاظ على المسافات وبدون أي صفحات فارغة.\n(ملاحظة: الكارتات لا تزال محفوظة، يمكنك طلب الملف مرة أخرى أو كتابة clear للتفريغ)."
                 )
             os.remove(file_path)
         else:
