@@ -14,60 +14,119 @@ logger = logging.getLogger(__name__)
 # التوكن الخاص بك
 TOKEN = "8876238881:AAEVbcBHKdpsFRIHxj_P5me6NLEc0JXA2lU"
 
-def generate_word_document(category, serial, pin, exp):
+# قائمة مؤقتة لتخزين الكارتات المرسلة
+cards_database = []
+
+def create_combined_word_document(cards_list):
     """
-    تعبئة قالب الوورد بالبيانات المطلوبة واستبدال الحقول بناءً على النموذج
+    دمج قالب الوورد المتعدد في ملف واحد، بحيث يأخذ كل كارت صفحة جديدة
     """
-    # تحديد المسار المطلق لملف القالب لضمان قراءته بشكل صحيح على أي منصة استضافة
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    doc_path = os.path.join(base_dir, "template.docx")
+    template_path = os.path.join(base_dir, "template.docx")
     
-    if not os.path.exists(doc_path):
-        logger.error(f"ملف القالب غير موجود في المسار: {doc_path}")
+    if not os.path.exists(template_path):
+        logger.error(f"ملف القالب غير موجود في المسار: {template_path}")
         return None
-    
+
     try:
-        doc = Document(doc_path)
+        master_doc = Document(template_path)
     except Exception as e:
         logger.error(f"فشل في فتح ملف القالب: {e}")
         return None
 
-    # استبدال الحقول داخل المستند (النصوص والجداول)
-    for paragraph in doc.paragraphs:
-        if "[CATEGORY]" in paragraph.text or "[SERIAL]" in paragraph.text or "[PIN]" in paragraph.text or "[EXP]" in paragraph.text:
-            for run in paragraph.runs:
-                run.text = (run.text
-                            .replace("[CATEGORY]", category)
-                            .replace("[SERIAL]", serial)
-                            .replace("[PIN]", pin)
-                            .replace("[EXP]", exp))
+    for index, card in enumerate(cards_list):
+        category = card['category']
+        serial = card['serial']
+        pin = card['pin']
+        exp = card['exp']
 
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                if "[CATEGORY]" in cell.text or "[SERIAL]" in cell.text or "[PIN]" in cell.text or "[EXP]" in cell.text:
-                    for paragraph in cell.paragraphs:
-                        for run in paragraph.runs:
-                            run.text = (run.text
-                                        .replace("[CATEGORY]", category)
-                                        .replace("[SERIAL]", serial)
-                                        .replace("[PIN]", pin)
-                                        .replace("[EXP]", exp))
+        if index > 0:
+            master_doc.add_page_break()
+            temp_doc = Document(template_path)
+            
+            for paragraph in temp_doc.paragraphs:
+                if any(k in paragraph.text for k in ["[CATEGORY]", "[SERIAL]", "[PIN]", "[EXP]"]):
+                    for run in paragraph.runs:
+                        run.text = (run.text
+                                    .replace("[CATEGORY]", category)
+                                    .replace("[SERIAL]", serial)
+                                    .replace("[PIN]", pin)
+                                    .replace("[EXP]", exp))
 
-    output_filename = f"card_{serial}.docx"
+            for table in temp_doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        if any(k in cell.text for k in ["[CATEGORY]", "[SERIAL]", "[PIN]", "[EXP]"]):
+                            for paragraph in cell.paragraphs:
+                                for run in paragraph.runs:
+                                    run.text = (run.text
+                                                .replace("[CATEGORY]", category)
+                                                .replace("[SERIAL]", serial)
+                                                .replace("[PIN]", pin)
+                                                .replace("[EXP]", exp))
+            
+            for element in temp_doc.element.body:
+                master_doc.element.body.append(element)
+        else:
+            for paragraph in master_doc.paragraphs:
+                if any(k in paragraph.text for k in ["[CATEGORY]", "[SERIAL]", "[PIN]", "[EXP]"]):
+                    for run in paragraph.runs:
+                        run.text = (run.text
+                                    .replace("[CATEGORY]", category)
+                                    .replace("[SERIAL]", serial)
+                                    .replace("[PIN]", pin)
+                                    .replace("[EXP]", exp))
+
+            for table in master_doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        if any(k in cell.text for k in ["[CATEGORY]", "[SERIAL]", "[PIN]", "[EXP]"]):
+                            for paragraph in cell.paragraphs:
+                                for run in paragraph.runs:
+                                    run.text = (run.text
+                                                .replace("[CATEGORY]", category)
+                                                .replace("[SERIAL]", serial)
+                                                .replace("[PIN]", pin)
+                                                .replace("[EXP]", exp))
+
+    output_filename = "all_cards_combined.docx"
     output_path = os.path.join(base_dir, output_filename)
-    doc.save(output_path)
+    master_doc.save(output_path)
     return output_path
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    معالجة الرسائل الواردة بالصيغة متعددة الأسطر:
-    15K 
-    Ser: 26041900225094 
-    PIN: 2421896018520315 
-    Exp: 2028-08-31
-    """
+    global cards_database
     text = update.message.text.strip()
+    
+    # 1. أمر تفريغ القائمة
+    if text.lower() == "clear":
+        count = len(cards_database)
+        cards_database = []
+        await update.message.reply_text(f"🗑️ تم مسح وتفريغ القائمة بنجاح! (تم حذف {count} كارت من الذاكرة).")
+        return
+
+    # 2. أمر طلب الملف المجمع
+    if text.lower() == "file":
+        if not cards_database:
+            await update.message.reply_text("⚠️ لم تقم بإرسال أي كارت بعد! أرسل الكارتات أولاً ثم اكتب file.")
+            return
+        
+        await update.message.reply_text(f"⏳ جاري دمج {len(cards_database)} كارت في ملف واحد...")
+        
+        file_path = create_combined_word_document(cards_database)
+        
+        if file_path and os.path.exists(file_path):
+            with open(file_path, 'rb') as doc_file:
+                await update.message.reply_document(
+                    document=doc_file,
+                    caption=f"✅ تم إرسال الملف المجمع ويحتوي على ({len(cards_database)}) كارت.\n(ملاحظة: الكارتات لا تزال محفوظة، يمكنك طلب الملف مرة أخرى أو كتابة clear للتفريغ)."
+                )
+            os.remove(file_path)
+        else:
+            await update.message.reply_text("❌ حدث خطأ أثناء دمج المستندات، تأكد من وجود ملف `template.docx`.")
+        return
+
+    # 3. معالجة وتخزين الكارت الوارد
     lines = text.split('\n')
     
     if len(lines) < 4:
@@ -77,18 +136,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "15K\n"
             "Ser: 26041900225094\n"
             "PIN: 2421896018520315\n"
-            "Exp: 2028-08-31"
+            "Exp: 2028-08-31\n\n"
+            "الأوامر المتاحة:\n"
+            "- **file**: لاستلام الملف المجمع.\n"
+            "- **clear**: لتفريغ القائمة وحذف الكارتات المخزنة."
         )
         return
 
-    # السطر الأول يمثل الـ Category
     category = lines[0].strip()
-    
     serial = ""
     pin = ""
     exp = ""
 
-    # استخراج البيانات باستخدام البحث عن المفاتيح بغض النظر عن ترتيب الأسطر الباقية
     for line in lines[1:]:
         if "Ser:" in line:
             serial = line.replace("Ser:", "").strip()
@@ -101,25 +160,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ لم يتم العثور على جميع البيانات (Ser, PIN, Exp). تأكد من كتابة الكلمات بشكل صحيح.")
         return
 
-    # توليد ملف الوورد
-    file_path = generate_word_document(category, serial, pin, exp)
-    
-    if file_path and os.path.exists(file_path):
-        with open(file_path, 'rb') as doc_file:
-            await update.message.reply_document(
-                document=doc_file,
-                caption=f"✅ تم توليد الكارت بنجاح:\nSer: {serial}"
-            )
-        # حذف الملف من السيرفر بعد الإرسال
-        os.remove(file_path)
-    else:
-        await update.message.reply_text("❌ حدث خطأ أثناء توليد المستند، تأكد من وجود ملف `template.docx` في الجذر الرئيسي للمشروع.")
+    cards_database.append({
+        'category': category,
+        'serial': serial,
+        'pin': pin,
+        'exp': exp
+    })
+
+    await update.message.reply_text(f"📥 تم حفظ الكارت (Ser: {serial})\nالعدد الإجمالي المخزن حالياً: {len(cards_database)}")
 
 def main():
-    # بناء تطبيق البوت
     application = ApplicationBuilder().token(TOKEN).build()
-
-    # استقبال الرسائل النصية
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
     print("Bot is running...")
