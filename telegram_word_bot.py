@@ -12,7 +12,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # قراءة الـ Token من متغيرات البيئة أو وضعه مباشرة هنا
-TOKEN = os.getenv("TELEGRAM_TOKEN", "YOUR_BOT_TOKEN_HERE")
+TOKEN = os.getenv("TELEGRAM_TOKEN", "8876238881:AAEVbcBHKdpsFRIHxj_P5me6NLEc0JXA2lU")
 
 def generate_word_document(category, serial, pin, exp):
     """
