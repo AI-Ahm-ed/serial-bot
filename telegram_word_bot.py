@@ -11,7 +11,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ضع الـ Token الخاص بك هنا مباشرة أو عبر متغيرات البيئة
+# قراءة الـ Token من متغيرات البيئة أو وضعه مباشرة هنا
 TOKEN = os.getenv("TELEGRAM_TOKEN", "YOUR_BOT_TOKEN_HERE")
 
 def generate_word_document(category, serial, pin, exp):
@@ -59,7 +59,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     text = update.message.text.strip()
     
-    # إذا أرسل المستخدم كلمة file أو ما شابه (اختياري)
+    # إذا أرسل المستخدم كلمة file أو ما شابه
     if text.lower() == "file":
         await update.message.reply_text("الرجاء إرسال بيانات الكارت بهذا الترتيب:\nCategory | Serial | Pin | Exp")
         return
@@ -90,7 +90,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # حذف الملف من السيرفر بعد الإرسال للحفاظ على المساحة
         os.remove(file_path)
     else:
-        await update.message.reply_text("❌ حدث خطأ أثناء توليد المستودع، تأكد من وجود ملف `template.docx`.")
+        await update.message.reply_text("❌ حدث خطأ أثناء توليد المستند، تأكد من وجود ملف `template.docx`.")
 
 def main():
     # بناء تطبيق البوت
