@@ -4,7 +4,6 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 from docx import Document
 
-# إعداد السجلات للتتبع
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -15,7 +14,7 @@ TOKEN = "8876238881:AAEVbcBHKdpsFRIHxj_P5me6NLEc0JXA2lU"
 cards_database = []
 
 def fill_template_data(doc, category, serial, pin, exp):
-    """استبدال الكلمات المفتاحية في المستند (فقرات وجداول)"""
+    """استبدال الكلمات المفتاحية في المستند بدقة"""
     replacements = {
         "[CATEGORY]": category,
         "[SERIAL]": serial,
@@ -49,25 +48,25 @@ def create_combined_word_document(cards_list):
         return None
 
     try:
-        # نبدأ بالمستند الرئيسي ونعبئ الكارت الأول فيه
+        # نبدأ بالمستند الرئيسي ونعبئ الكارت الأول
         master_doc = Document(template_path)
         fill_template_data(master_doc, cards_list[0]['category'], cards_list[0]['serial'], cards_list[0]['pin'], cards_list[0]['exp'])
     except Exception as e:
-        logger.error(f"فشل في إنشاء أو فتح ملف القالب: {e}")
+        logger.error(f"فشل في فتح ملف القالب: {e}")
         return None
 
-    # إضافة الكارتات المتبقية بفاصل صفحات نظيف ومنظم
+    # لكل كارت إضافي، نفتح نسخته الخاصة ونضيفها بفاصل صفحات سليم
     for i in range(1, len(cards_list)):
         card = cards_list[i]
         
-        # إضافة فاصل صفحات حقيقي ونظيف يمنع تماماً زحف الكارت على الصفحة السابقة أو تكوين صفحات فارغة
+        # إضافة فاصل صفحة نظيف في المستند الرئيسي
         master_doc.add_page_break()
 
-        # نفتح نسخة جديدة ونظيفة من القالب لكل كارت لتكون المستقلة بتصميمها ولوجوها
+        # نفتح نسخة جديدة ومستقلة تماماً من القالب
         temp_doc = Document(template_path)
         fill_template_data(temp_doc, card['category'], card['serial'], card['pin'], card['exp'])
 
-        # دمج عناصر الكارت الجديد إلى المستند الرئيسي
+        # نسخ محتوى القالب الجديد بحذافيره إلى المستند الرئيسي
         for element in temp_doc._body._element:
             master_doc._body._element.append(element)
 
@@ -99,7 +98,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with open(file_path, 'rb') as doc_file:
                 await update.message.reply_document(
                     document=doc_file,
-                    caption=f"✅ تم إرسال الملف المجمع ويحتوي على ({len(cards_database)}) كارت في صفحات مستقلة تماماً بدون تداخل.\n(ملاحظة: الكارتات لا تزال محفوظة، يمكنك طلب الملف مرة أخرى أو كتابة clear للتفريغ)."
+                    caption=f"✅ تم إرسال الملف المجمع ويحتوي على ({len(cards_database)}) كارت بنفس التصميم تماماً دون تداخل.\n(ملاحظة: الكارتات لا تزال محفوظة، يمكنك طلب الملف مرة أخرى أو كتابة clear للتفريغ)."
                 )
             os.remove(file_path)
         else:
