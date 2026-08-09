@@ -1,6 +1,5 @@
 import os
 import logging
-import re
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 from docx import Document
@@ -19,7 +18,13 @@ def generate_word_document(category, serial, pin, exp):
     """
     تعبئة قالب الوورد بالبيانات المطلوبة واستبدال الحقول بناءً على النموذج
     """
-    doc_path = "template.docx"  # تأكد من رفع ملف القالب بنفس هذا الاسم
+    # تحديد المسار المطلق لملف القالب لضمان قراءته بشكل صحيح على أي منصة استضافة
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    doc_path = os.path.join(base_dir, "template.docx")
+    
+    if not os.path.exists(doc_path):
+        logger.error(f"ملف القالب غير موجود في المسار: {doc_path}")
+        return None
     
     try:
         doc = Document(doc_path)
@@ -50,8 +55,9 @@ def generate_word_document(category, serial, pin, exp):
                                         .replace("[EXP]", exp))
 
     output_filename = f"card_{serial}.docx"
-    doc.save(output_filename)
-    return output_filename
+    output_path = os.path.join(base_dir, output_filename)
+    doc.save(output_path)
+    return output_path
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -107,7 +113,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # حذف الملف من السيرفر بعد الإرسال
         os.remove(file_path)
     else:
-        await update.message.reply_text("❌ حدث خطأ أثناء توليد المستند، تأكد من وجود ملف `template.docx` في المشروع.")
+        await update.message.reply_text("❌ حدث خطأ أثناء توليد المستند، تأكد من وجود ملف `template.docx` في الجذر الرئيسي للمشروع.")
 
 def main():
     # بناء تطبيق البوت
